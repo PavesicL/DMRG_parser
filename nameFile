@@ -1,0 +1,18 @@
+#SENDING JOBS
+#give a name in the python formatted string format and specify the parameters and their types (sweep or case-by-case)
+
+name = U1_Ec{0}_n0{1}_gamma{2}
+
+params{ 
+	Ec case
+	n0 sweep
+	gamma sweep
+}endparams
+
+#PARSING RESULTS
+#Results will be saved into text files at path. There will be a separate file for every parameter, expect for the one specified as sweep.
+
+get_energies{
+	path = /home/pavesic/small_superconductors/data_DMRG/phaseTransition_Ec_n0/energies_U1_N800_Ec{}_n0{}
+	sweep gamma
+}get_energies
