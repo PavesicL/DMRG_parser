@@ -68,11 +68,13 @@ def readNameFileParsing(file, observable, noParam=False):
 		return param, path			
 
 
-def get_occs(n, result_file):
+def get_occs(n, result_file, verbose=True):
 	"""
 	Gets level occupancies, impurity occupancy and energy for a sector with n particles.
 	"""
-
+	if verbose:
+		print("n is ", n)
+	
 	with open(result_file,  "r") as resF:
 		sector=False
 		for line in resF:
@@ -102,3 +104,26 @@ def get_occs(n, result_file):
 				break
 
 	return occ, impocc, E
+
+def get_nupndn(n, result_file):
+	"""
+	Reads the line with info about nup and ndn occupancies.
+	"""	
+	with open(result_file,  "r") as resF:
+		sector=False
+		for line in resF:
+			a = re.search("RESULTS FOR THE SECTOR WITH {0} PARTICLES:".format(n), line)
+			b = re.search("impurity nup ndn =", line)
+			
+
+			if a:
+				sector=True
+
+			if sector and b:
+				nupndn = re.findall("\d*\.\d+|\d+", line)
+				nup, ndn = nupndn[0], nupndn[1]
+
+				sector=False
+				break
+
+	return nup, ndn
