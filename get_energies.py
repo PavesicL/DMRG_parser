@@ -124,13 +124,14 @@ for i in range(len(splitElist)):
 			print("ns will change during the sweep, this will not work correctly!")
 
 		nsstring = "	".join([str(int(i)) for i in ns])
-		head = "gamma	" + nsstring
+		head = sweepParam + "	" + nsstring
 
 		#create and save a list with elements: [sweepParam, E1, E2, ...]
 		sweepEList = []
 		for j in range(len(splitElist[i])):
 			sweepEList.append([splitElist[i][j][0]] + splitElist[i][j][2].tolist())
 		
+
 		np.savetxt(fname=savepath.format(*allParamCombinations[i]), X=sweepEList, delimiter="	", header=head)
 		#print("Saved to {0}".format(savepath.format(*allParamCombinations[i])))
 
