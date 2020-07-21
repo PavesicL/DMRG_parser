@@ -19,7 +19,7 @@ name, paramList = readNameFile("nameFile")
 regexName, _ = readNameFile("nameFile", regex=True)
 sweepParam, savepath = readNameFileParsing("nameFile", "get_imp_occupancy_p1")
 
-outputName = "output.txt"	#subject to change - maybe allow user input here
+outputName = "output"	#subject to change - maybe allow user input here
 
 #determine which param in paramList is the sweep one -- paramList[whichParam][0] is the parameter for which to save the energy sweeps
 for i in range(len(paramList)):
@@ -70,11 +70,15 @@ for subdir, dirs, files in os.walk(result_dir):
 			except ValueError:
 				continue
 
-
-			#tuki = os.popen("tail -n 20 {0}/output.txt".format(folder)).read().splitlines() #read the last 20 lines of the file
+			result_file = folder+"/"+outputName
+			#CHECK IF THE OUTPUT FILE EXISTS
+			if not os.path.isfile(result_file):
+				result_file += ".txt"
+			if not os.path.isfile(result_file):
+				print("The output file is not output or output.txt; or does not exist!")
 
 			#open the output file
-			with open(folder+"/"+outputName, "r") as resF:
+			with open(result_file, "r") as resF:
 
 				#find the impurity index
 				for line in resF:

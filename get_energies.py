@@ -20,7 +20,7 @@ name, paramList = readNameFile("nameFile")
 regexName, _ = readNameFile("nameFile", regex=True)
 sweepParam, savepath = readNameFileParsing("nameFile", "get_energies")
 
-outputName = "output.txt"	#subject to change - maybe allow user input here
+outputName = "output"	#subject to change - maybe allow user input here
 
 #determine which param in paramList is the sweep one -- paramList[whichParam][0] is the parameter for which to save the energy sweeps
 for i in range(len(paramList)):
@@ -42,10 +42,10 @@ for i in range(len(uniqueParamList)+1):
 
 		for subdir, dirs, files in os.walk(result_dir):
 			for direc in dirs:	#iterate over all folders
-				
+						
 				folder = os.path.join(subdir, direc)
 
-				a = re.search(param+"([0-9]+\.*[0-9]*)", folder)
+				a = re.search(param+"(-?[0-9]+\.*[0-9]*)", folder)
 				if a:
 					paramval = float(a.group(1))
 					uniqueParamList[j].append(paramval)
@@ -70,12 +70,17 @@ for subdir, dirs, files in os.walk(result_dir):
 				paramVals = [float(aa.group(i+1)) for i in range(len(paramList))] 	#values of the parameters are saved in this list	
 			except ValueError:
 				continue
+			
 
-
-			#tuki = os.popen("tail -n 20 {0}/output.txt".format(folder)).read().splitlines() #read the last 20 lines of the file
+			result_file = folder+"/"+outputName
+			#CHECK IF THE OUTPUT FILE EXISTS
+			if not os.path.isfile(result_file):
+				result_file += ".txt"
+			if not os.path.isfile(result_file):
+				print("The output file is not output or output.txt; or does not exist!")
 
 			#open the output file
-			with open(folder+"/"+outputName, "r") as resF:
+			with open(result_file, "r") as resF:
 
 				n_E = []
 				for line in resF:
@@ -90,10 +95,10 @@ for subdir, dirs, files in os.walk(result_dir):
 				n_E = sorted(n_E)	#sort by ns
 				Es = np.transpose(n_E)[1]
 				ns = np.transpose(n_E)[0]
-			
+
+			if len(Es)!=0:		
 				EList.append(paramVals+[ns, Es])	#this is now a list of values of all parameters (in the same order as in paramList), a list of ns and a list of Es
 				saved+=1			
-
 
 #split EList into lists for each unique value of the parameters given in uniqueParamList
 allParamCombinations = list(itertools.product(*uniqueParamList))
@@ -111,8 +116,13 @@ for i in range(len(EList)):
 			splitElist[j].append([EList[i][whichParam], EList[i][-2], EList[i][-1]])	#append the value of the sweep parameter, ns and Es
 
 #sort the lists by the value of the sweep param
+#SORTING: it is possible to get jobs with one of the parameter values 0.0 and -0.0 (typically happens with epsimp). 
+#These values are exactly the same, and are therefore not sortable. They raise a ValueError, so they are sorted by which came first (their i).
 for i in range(len(splitElist)):
-	splitElist[i] = sorted(splitElist[i])		
+	try:
+		splitElist[i] = sorted(splitElist[i])		
+	except ValueError:	
+		splitElist[i] = sorted(splitElist[i], key = lambda x: (x[0], i))		
 
 #save the energies to a file
 for i in range(len(splitElist)):
@@ -130,7 +140,6 @@ for i in range(len(splitElist)):
 		sweepEList = []
 		for j in range(len(splitElist[i])):
 			sweepEList.append([splitElist[i][j][0]] + splitElist[i][j][2].tolist())
-		
 
 		np.savetxt(fname=savepath.format(*allParamCombinations[i]), X=sweepEList, delimiter="	", header=head)
 		#print("Saved to {0}".format(savepath.format(*allParamCombinations[i])))

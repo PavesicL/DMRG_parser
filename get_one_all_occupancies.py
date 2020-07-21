@@ -19,7 +19,7 @@ name, paramList = readNameFile("nameFile")
 regexName, _ = readNameFile("nameFile", regex=True)
 savepath = readNameFileParsing("nameFile", "get_one_all_occupancies", noParam=True)
 
-outputName = "output.txt"	#subject to change - maybe allow user input here
+outputName = "output"	#subject to change - maybe allow user input here
 
 #get the input values and save them to paramVals
 if len(sys.argv) != 1 + len(paramList):
@@ -34,6 +34,10 @@ else:
 
 
 result_file = os.getcwd() + "/results/" + name.format(*paramVals) + "/" + outputName
+if not os.path.isfile(result_file):
+	result_file += ".txt"
+if not os.path.isfile(result_file):
+	print("The output file is not output or output.txt; or does not exist!")
 
 #OPEN THE OUTPUT FILE AND FIND THE GROUND STATE SECTOR
 with open(result_file,  "r") as resF:

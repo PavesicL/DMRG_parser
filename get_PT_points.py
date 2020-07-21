@@ -72,7 +72,6 @@ for subdir, dirs, files in os.walk(result_dir):
 				continue
 
 			
-
 			tuki = os.popen("tail -n 3 {0}/output.txt".format(folder)).read().splitlines() #read the last 3 lines of the file
 			for line in tuki:
 				a = re.search("Phase transition at Gamma = (\d+\.*\d*)", line)

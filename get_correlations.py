@@ -39,7 +39,7 @@ name, paramList = readNameFile("nameFile")
 regexName, _ = readNameFile("nameFile", regex=True)
 savepath = readNameFileParsing("nameFile", "get_correlations", noParam=True)
 
-outputName = "output.txt"	#subject to change - maybe allow user input here
+outputName = "output"	#subject to change - maybe allow user input here
 result_dir = os.getcwd() + "/results"
 
 """
@@ -95,6 +95,12 @@ saved=0
 for ii in range(len(allParamCombinations)):
 
 	result_file = os.getcwd() + "/results/" + name.format(*allParamCombinations[ii]) + "/" + outputName
+
+	#CHECK IF THE OUTPUT FILE EXISTS
+	if not os.path.isfile(result_file):
+		result_file += ".txt"
+	if not os.path.isfile(result_file):
+		print("The output file is not output or output.txt; or does not exist!")
 
 	ns=[]	#a list of ns in the same order as the correlations are saved
 	chargeCorr, spinCorr, pairCorr, hopCorrUp, hopCorrDn = [], [], [], [], []
