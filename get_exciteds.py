@@ -4,10 +4,10 @@ Parses the DMRG output file and saves ns to files. This is useful in the cases w
 """
 from DMRG_parser_functions import save_variables_simple
 
-saved_sets, saved = save_variables_simple("get_ns", "get_ns")
+saved_sets, saved = save_variables_simple("get_exciteds", "get_exciteds")
 
 if saved!=0:
-	print("Saved {} ns in {} sets.".format(saved, saved_sets))
+	print("Saved {} exciteds in {} sets.".format(saved, saved_sets))
 	
 else:
 	print("No files found in given range!") 

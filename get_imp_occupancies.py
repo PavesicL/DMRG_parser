@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Parses the DMRG output file and saves energies to files. 
+Parses the DMRG output file and saves impurity occupations of the nGS sector to files. 
 """
 
 from DMRG_parser_functions import save_variables_simple
 
-saved_sets, saved = save_variables_simple("get_all_occupancies", "get_all_occupancies")
-
+saved, saved_sets = save_variables_simple("get_imp_occupancies", "get_imp_occupancies")
 
 if saved!=0:
 	print("Saved {} occupancies in {} sets.".format(saved, saved_sets))

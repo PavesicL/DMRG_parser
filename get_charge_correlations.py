@@ -5,7 +5,7 @@ Parses the DMRG output file and saves energies to files.
 
 from DMRG_parser_functions import save_variables_simple
 
-saved_sets, saved = save_variables_simple("get_correlations", "get_correlations")
+saved_sets, saved = save_variables_simple("get_charge_correlations", "get_charge_correlations")
 
 
 if saved!=0:

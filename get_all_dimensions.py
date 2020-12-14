@@ -22,70 +22,92 @@ savepath = readNameFileParsing("nameFile", "get_all_dimensions", noParam=True)
 outputName = "output"	#subject to change - maybe allow user input here
 
 #get the input values and save them to paramVals
-if len(sys.argv) != 1 + len(paramList):
+if len(sys.argv) != 2: #+ len(paramList):
 	printstring = ""
 	for i in paramList:
 		printstring += i[0] + " "
-	print("usage: " + sys.argv[0] + " " + printstring)
+	print("Usage: ")
+	print(sys.argv[0] + " " + printstring)
+	print("or")
+	print(sys.argv[0] + " -a")
+	print("for all finished jobs.")
 	exit()
 
+
 else:
-	paramVals = sys.argv[1:]
-
-
-result_file = os.getcwd() + "/results/" + name.format(*paramVals) + "/" + outputName
-
-if not os.path.isfile(result_file):
-	result_file += ".txt"
-if not os.path.isfile(result_file):
-	print("The output file is not output or output.txt; or does not exist!")
-
-
-#OPEN THE OUTPUT FILE AND FIND THE GROUND STATE SECTOR
-with open(result_file,  "r") as resF:
+	if sys.argv[1] == "-a":
+		allValues=True
+		print("GETTING ALL JOBS...")
 	
-	dimlist=[]
-	ns=[]
-
-	inSector=False	
-	sweep, HS = 0, 0
-	for line in resF:
-		
-		if inSector: 
-			oldsweep=sweep
-
-		a = re.search("Sweeping in the sector with (\d+) particles.", line)	#to determine the sector
-		b = re.search("Sweep=([0-9]+), HS=([1-2]), Bond=([0-9]+)/[0-9]+", line)										
-		c = re.search("States kept: dim=([0-9]+)", line)
-
-		if a:
-			n = int(a.group(1))
-			ns.append(n)		#save ns to this list
-			inSector=True
-			dimlist.append([])	#append a new empty list, save the dimensions to it
-
-		if b and inSector:
-			sweep = int(b.group(1))
-			HS = int(b.group(2))
-			bond = int(b.group(3))
-			if sweep!=oldsweep:
-				dimlist[-1].append([])
-
-		#if the line contains info about dimension, append it to the correct sub-list
-		if c and inSector:
-			dimlist[-1][sweep-1].append(c.group(1))
+	else:
+		paramVals = sys.argv[1:]
+		allValues=False	
 
 
-for i in range(len(dimlist)):
+results = []
+if not allValues:
+	results.append(os.getcwd() + "/results/" + name.format(*paramVals) + "/" + outputName)
+else:
+	with open("finishedJobs.txt", "r") as file:
+		for line in file:
+			results.append(os.getcwd() + "/results/" + line[:-1] + "/" + outputName)	#TAKE CARE OF THE \n WITH [-1]
 
-	with open(savepath.format(*paramVals, ns[i]), "w+") as ff:
-		for j in range(len(dimlist[i][0])):
-			dimstring = "{0}	".format(j)
-			for k in range(len(dimlist[i])):
-				dimstring += str(dimlist[i][k][j])
-				dimstring += "	"
-			dimstring+="\n"	
+for result_file in results:
 
-			ff.writelines(dimstring)
+	if not os.path.isfile(result_file):
+		result_file += ".txt"
+	if not os.path.isfile(result_file):
+		print("The output file is not output or output.txt; or does not exist!", result_file)
 
-	print("Saved to {}".format(savepath.format(*paramVals, ns[i])))
+	if allValues:
+		aa = re.findall(regexName, result_file)
+		paramVals = aa[0] 
+
+	#OPEN THE OUTPUT FILE AND FIND THE GROUND STATE SECTOR
+	with open(result_file,  "r") as resF:
+
+		dimlist=[]
+		ns=[]
+
+		inSector=False	
+		sweep, HS = 0, 0
+		for line in resF:
+			
+			if inSector: 
+				oldsweep=sweep
+
+			a = re.search("Sweeping in the sector (\d+),(\d+\.?\d*)", line)	#to determine the sector
+			b = re.search("Sweep=([0-9]+), HS=([1-2]), Bond=([0-9]+)/[0-9]+", line)										
+			c = re.search("States kept: dim=([0-9]+)", line)
+
+			if a:
+				n = int(a.group(1))
+				ns.append(n)		#save ns to this list
+				inSector=True
+				dimlist.append([])	#append a new empty list, save the dimensions to it
+
+			if b and inSector:
+				sweep = int(b.group(1))
+				HS = int(b.group(2))
+				bond = int(b.group(3))
+				if sweep!=oldsweep:
+					dimlist[-1].append([])
+
+			#if the line contains info about dimension, append it to the correct sub-list
+			if c and inSector:
+				dimlist[-1][sweep-1].append(c.group(1))		
+
+
+	for i in range(len(dimlist)):
+
+		with open(savepath.format(*paramVals, ns[i]), "w+") as ff:
+			for j in range(len(dimlist[i][0])):
+				dimstring = "{0}	".format(j)
+				for k in range(len(dimlist[i])):
+					dimstring += str(dimlist[i][k][j])
+					dimstring += "	"
+				dimstring+="\n"	
+
+				ff.writelines(dimstring)
+
+		print("Saved to {}".format(savepath.format(*paramVals, ns[i])))
