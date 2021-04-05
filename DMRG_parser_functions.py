@@ -14,93 +14,80 @@ import argparse
 
 ###################################################################################################
 
+class parameter:
+ 
+	def __init__(self, name, sweeptype):
+		self.name = name
+		self.sweeptype = sweeptype
+
+		self.value = None
+
+###################################################################################################
+
 def readNameFileParsing(file, observable, noParam=False):
 	"""
-	Reads the nameFile and returns the path to which to save the files and the parameter over which to save the sweeps.
-	If noParam, there is no parameter to sweep over, so no param is defined (for example get_all_occupancies, saves occs
-	for one file only). 
+	Reads the nameFile and returns the path to which to save the files and the parameter over which to sweep.
+	If noParam, there is no parameter to sweep over, so no sweep param is defined (for example get_all_occupancies, saves occs
+	for one calculation only). 
 	"""
 
 	obsCheck = False
 	param = None
 
 	with open(file, "r") as f:
-		
-		if noParam:
-			for line in f:
+		for line in f:
+			line = line.strip()
 
-				a = re.search(observable+"{", line)
-				b = re.search("}"+observable, line)
+			if len(line)==0:
+				continue
 
-				c = re.search("path\s*=\s*(.*)", line)
-		
-				if line[0] == "#":	#this line is a comment
-					pass
-				
-				if a:
-					obsCheck=True
-				if b:
-					obsCheck=False
-				
-				if c and obsCheck:
-					path = c.group(1)
-		
-			return path			
-		
-		else:
-			for line in f:
-				if line[0]=="#":
-					continue
+			if line[0]=="#":	#comment
+				continue
 
-				a = re.search(observable+"{", line)
-				b = re.search("}"+observable, line)
+			a = re.search(observable+"{", line)
+			b = re.search("}"+observable, line)
 
-				c = re.search("path\s*=\s*(.*)", line)
-				d = re.search("sweep\s*(.*)", line)
+			c = re.search("path\s*=\s*(.*)", line)
+			d = re.search("\s*sweep\s*(.*)", line)
+			
+			if a:
+				obsCheck=True
+			if b:
+				obsCheck=False
+			
+			if c and obsCheck:
+				path = c.group(1)
+			if d and obsCheck:
+				param = d.group(1)
 
-				if line[0] == "#":	#this line is a comment
-					pass
-				
-				if a:
-					obsCheck=True
-				if b:
-					obsCheck=False
-				
-				if c and obsCheck:
-					path = c.group(1)
-				if d and obsCheck:
-					param = d.group(1)
-		try: 		
-			return param, path			
-		except UnboundLocalError:
-			return 0, 0
+	try: 		
+		return param, path.strip()			
+	
+	except UnboundLocalError:
+		return 0, 0
 
-def readNameFile(file, regex=False):
+
+def getParamsNameFile(file):
 	"""
-	Reads the nameFile and returns a jobname and a list of parameters and their types.
-	If regex = true, instead of a python formatted string, return the name as a regex expression string.  
-	INPUT:
-	file - relative path to the file with the information about jobname and parameters.
-	regex - wheter to return the name as a regex expression string
-	OUTPUT:
-	name/regexname - a jobname, a python formatted string or a regex type string
-	paramsList - a list of all parameters and their types, paramsList[i] = [param, paramtype]
+	Reads the nameFile, and returns a generic jobname and a dictionary of parameters, 
+	where key is the parameter name and value is its sweeptype (sweep, case or relation).
 	"""
+
+	paramList = []
 
 	paramsCheck = False
-	paramsList = []
-
 	with open(file, "r") as f:
-
 		for line in f:
+			line = line.strip()	#strip the leading and trailing whitespace
+			if len(line)==0:
+				continue
 
-			a = re.search("name\s*=\s*(.*)", line)	
+			a = re.search("name\s*=\s*(.*)", line)
 		
 			b = re.search("params\s*{", line) 
 			c = re.search("}\s*endparams", line) 
 			
-			d = re.search("\s*(\S*)\s*(\S*)\s*(\S*)", line)
-			e = re.search("\s*(\S*)\s*(\S*)", line)
+			d = re.search("(\w*)\s*(\w*)", line)
 			
 			if line[0] == "#":	#this line is a comment
 				pass
@@ -113,20 +100,12 @@ def readNameFile(file, regex=False):
 				paramsCheck=False
 
 			if paramsCheck and d:	#parse parameters
-				param, paramtype, takeOut = d.group(1), d.group(2), d.group(3)
-				paramsList.append([param, paramtype, takeOut])
+				param, sweeptype = d.group(1), d.group(2)
+				paramList.append(parameter(param, sweeptype))
 
-			elif paramsCheck and e:	#parse parameters
-				param, paramtype = e.group(1), e.group(2)
-				paramsList.append([param, paramtype])
-
-
-	if regex:
-		regexname = re.sub("{[0-9]+}", "(-*[0-9]+\.*[0-9]*)", name)	#replace all instances of {number} in the name with ([0-9]+.*[0-9]*), which matches floats and ints
-		return regexname, paramsList
+		return name, paramList
 	
-	else:
-		return name, paramsList
+	return None, None
 
 ###################################################################################################
 
@@ -144,164 +123,241 @@ def save_variables_simple(which_var, which_func, params=[]):
 	"""
 
 	#get params, job name, path to save and the sweep parameter
-	name, paramList = readNameFile("nameFile")
-	regexName, _ = readNameFile("nameFile", regex=True)
+	name, paramList = getParamsNameFile("nameFile")	#each key to paramsDict is a name of the parameter, with the value being its sweeptype
+	regexName = re.sub("{[0-9]+}", "([+-]?[0-9]+(?:\.?[0-9]*(?:[eE][+-]?[0-9]+)?)?)", name)	#replace all instances of {number} in the name with ([0-9]+.*[0-9]*), which matches floats and ints
 	sweepParam, savepath = readNameFileParsing("nameFile", which_var)
 
 	outputName = "output"	#subject to change - maybe allow user input here
 
-	if name == 0 and paramList == 0:
-		if not re.match("print.*", which_var):
-			print("Name and paramList were not found. Check if nameFile has correct data!")
-			exit()
+	if name == None and paramList == None:
+		print("Name and paramDict were not found. Check if nameFile has correct data!")
+		exit()
 
-	#determine which param in paramList is the sweep one -- paramList[whichParam][0] is the parameter for which to save the sweeps
-	for i in range(len(paramList)):
-		param = paramList[i][0]
+
+	whichParam = determineWhichParam(sweepParam, [p.name for p in paramList])		
+
+	doneJobs = findFinishedJobs(os.getcwd())	#a list of all jobs found in finishedJobs.txt and savedJobs.txt
+
+
+	#get results from all folders and save them to EList
+	EList=[]
+	saved=0
+	noth5, h5 = 0, 0
+
+	result_dir = os.getcwd() + "/results/"
+
+	for job in doneJobs:
+		folder = result_dir + job
+		aa = re.match(regexName, job)
+
+		updateParamValues(paramList, aa)
+
+		result_file_h5 = folder+"/solution.h5"
+		result_file = folder+"/"+outputName
+
+		#CHECK IF THE OUTPUT FILES EXIST
+		if not os.path.isfile(result_file):
+			result_file += ".txt"
+			#result_file = result_file[:-4]
+		if not os.path.isfile(result_file):
+			print("The output file is not output or output.txt; or does not exist! Job: "+job)
+			continue
+
+		Es, A, B = getDataHDF5(job, result_file_h5, result_file, which_func)
+		h5+=A
+		noth5+=B
+
+		if len(Es)!=0:
+			EList.append([p.value for p in paramList]+[Es])	#this is now a list of values of all parameters (in the same order as in paramList), and corresponding Es
+			saved+=1
+	
+	EList = sortByParamValues(EList, whichParam, paramList)
+
+	saved_sets = sliceAndSave(EList, paramList, whichParam, savepath)
+	print("{} were saved from the hdf5 file, while {} were NOT.".format(h5, noth5))
+
+	return saved_sets, saved
+
+###################################################################################################
+#SUBFUNCTIONS, USED IN THE MAIN FUNTIONS ABOVE
+
+def determineWhichParam(sweepParam, listOfParams):
+	"""
+	Determines which parameter is the sweep parameter.
+	"""
+
+	whichParam=None
+	for i in range(len(listOfParams)):
+		param = listOfParams[i]
 		if param == sweepParam:
 			whichParam = i 
 			break
 
+	return whichParam
 
-	#take out the parameters that are labeled as take out
-	tmpl=[]
-	for pp in paramList:
-		if len(pp)>=3:
-			if pp[2].lower()=="true" or pp[2].lower()=="takeout":
-				pass
-			else:
-				tmpl.append(pp[:2])
-		else:
-			tmpl.append(pp[:2])
-	paramList = tmpl		
+def findFinishedJobs(folder):
+	"""
+	Returns a list of jobs that are in finishedJobs.txt or savedJobs.txt.
+	"""
+	finished = readFileToList(folder + "/finishedJobs.txt")
+	saved = readFileToList(folder + "/savedJobs.txt")
 
-	#if whichParam is not defined (because sweepParam == None), set it to -1 
+	return finished + saved
+
+def updateParamValues(paramList, regex):
+	i=0
+	for p in paramList:
+		i+=1
+		p.value = float(regex.group(i))
+
+	return None
+
+def getDataHDF5(job, result_file_h5, result_file, which_func):
+	"""
+	Calls the desired parsing function and saves the recovered data.
+	"""
+	
+	h5, noth5 = 0, 0
+
+	#TRY CALLING THE HDF5 PARSING FUNCTION. IF IT FAILS (useful if there is no .h5 file, typically in old jobs), FALLBACK TO TEXT PARSING. 
 	try:
-		whichParam==1
+		"""
+		This magic calls the function with the name which_func, with the argument result_file and *params
+		This is here in order to be able to pass a name of the function as an argument, and call it here (eg. "get_energies" is passed as a param, so in this line the
+		function get_energies() is called). 
+		"""
+
+		states = get_all_states(result_file_h5)							
+		this_module = sys.modules[__name__]
+		Es = getattr(this_module, which_func)(result_file_h5, states)
+		h5+=1
+
 	except:
-		whichParam=-1
+		this_module = sys.modules[__name__]
+		try:
+			Es = getattr(this_module, which_func+"_text")(result_file)
+			noth5+=1 	#to check how many files were saved not from the h5 files
 
+		except:
+			Es=[]
+			print("Not found! file: "+job)
+	
+	return Es, h5, noth5
 
-	result_dir = os.getcwd() + "/results"
-
-	#LOAD finishedJobs.txt AND CHECK ONLY THOSE FOLDERS
-	#finishedJobs=[]
-	#with open("finishedJobs.txt", "r") as fff:
-	#	for line in fff:
-	#		finishedJobs.append(line[:-1])	#TAKE AWAY THE \n SYMBOL WITH [:-1]
-
-	#get results from all folders and save them to Elist
-	EList=[]
-	saved=0
-	noth5, h5 = 0, 0
-	for subdir, dirs, files in os.walk(result_dir):
-		for direc in dirs:	#iterate over all folders
-			folder = os.path.join(subdir, direc)
-			
-			aa = re.match(regexName, direc)	#for each folder, check if it is of the job
-
-
-			if aa:# and "DONE" in os.listdir(folder):	#ALSO CHECK WHETER THE FOLDER BELONGS TO A FINISHED JOB (there is a file called DONE in its folder), TO AVOID PARSING UNFINISHED OUTPUT FILES. 
-													#THIS ONLY WORKS FOR SLURM, AS IN ARC ALL DOWNLOADED JOBS ARE ALREADY FINISHED. 
-													#SO THIS THING NEEDS A SWITCH IF THE JOBS ARE FROM SLURM.
-
-				#finishedJobs.remove(direc)	
-
-				paramVals = [float(aa.group(i+1)) for i in range(len(paramList))] 	#values of the parameters are saved in this list	
-
-				result_file_h5 = folder+"/solution.h5"
-
-				result_file = folder+"/"+outputName
-				#CHECK IF THE OUTPUT FILE EXISTS
-				if not os.path.isfile(result_file):
-					result_file += ".txt"
-					#result_file = result_file[:-4]
-				if not os.path.isfile(result_file):
-					print("The output file is not output or output.txt; or does not exist! Job: "+direc)
-					continue
-
-				#TRY CALLING THE HDF5 PARSING FUNCTION. IF IT FAILS (useful if there is no .h5 file, typically in old jobs), FALLBACK TO TEXT PARSING. 
-				try:
-					states = get_all_states(result_file_h5)					
-					this_module = sys.modules[__name__]
-					Es = getattr(this_module, which_func)(result_file_h5, states)
-					h5+=1
-						
-				except:
-					if which_var != "print_times":
-						#print times is not saved in the .h5 files, so the fall back will happen every time
-						print("Falling back to the text parsing function.")	
-						print("file: "+result_file)
-						print()
-
-					#This magic calls the function with the name which_func, with the argument result_file and *params
-					#This is here in order to be able to pass a name of the function as an argument, and call it here (eg. "get_energies" is passed as a param, so in this line the
-					#function get_energies() is called). 
-					this_module = sys.modules[__name__]
-					Es = getattr(this_module, which_func+"_text")(result_file, *params)
-
-					noth5+=1 	#just to check how many files were saved not in the h5 way
-				
-				if len(Es)!=0:
-					EList.append(paramVals+[Es])	#this is now a list of values of all parameters (in the same order as in paramList), and corresponding Es
-					saved+=1
-
-	#THIS SORTS EList BY ALL NON-SWEEP PARAMS FIRST, AND THEN BY THE SWEEP PARAM LAST. 
-	#THE RESULT IS THE LIST OF Es, THAT CAN BE SLICED WHERE THE SET OF PARAMETERS (EXCEPT THE SWEEP ONE) CHANGES 
-	EList = sorted(EList, key = lambda x : ([x[i] for i in range(whichParam)] + [x[i] for i in range(whichParam+1,len(paramList))] + [x[whichParam]]) )
-
-	if which_var == "print_times":
-		print("getting walltimes...")
-		onlyTimes = [i[-1][0] for i in EList]
-		np.savetxt(fname="times", X=onlyTimes)
-		return None
-
+def sortByParamValues(EList, whichParam, paramList):
+	"""
+	Sort EList by all non sweep parameters first, and then by the sweep parameter.
+	Allows EList to be sliced where the parameters except the sweep one change.	
+	"""
+	if whichParam == None:
+		EList = sorted(EList, key = lambda x : ([x[i] for i in range(len(EList[0])-1)]) )
 	else:
-		previousParamVals = np.array([EList[0][j] for j in range(whichParam)] + [EList[0][j] for j in range(whichParam+1,len(paramList))])
-		tempList=[]
-		saved_sets=0
-		for i in range(len(EList)):
-			currentParamVals = np.array([EList[i][j] for j in range(whichParam)] + [EList[i][j] for j in range(whichParam+1,len(paramList))])
-			
-			#when the parameters change, save what you accumulated in previous steps and continue with new params
-			compareList = [i for i, j in zip(previousParamVals, currentParamVals) if i==j]
-			
-			if len(compareList)!=len(currentParamVals):
-			
-				#np.savetxt(fname=savepath.format(*previousParamVals), X=tempList, delimiter="	")
-				with open(savepath.format(*previousParamVals), "w") as txt_file:
-				    for line in tempList:
-				    	txt_file.write("	".join([str(i) for i in line]) + "\n") # works with any number of elements in a line
-				
-				saved_sets+=1
-				
-				#reset the list 
-				tempList = []
-				
-			if whichParam==-1:
-				tempList.append(EList[i][-1])
-			#accumulate values of the sweep parameter and of observables in a temp list
-			else:
-				tempList.append([EList[i][whichParam]]+list(EList[i][-1]))
+		EList = sorted(EList, key = lambda x : ([x[i] for i in range(whichParam)] + [x[i] for i in range(whichParam+1,len(paramList))] + [x[whichParam]]) )
 
-			previousParamVals = currentParamVals	#overwrite the values of parameters	with the new ones
+	return EList	
 
-		#now save the last set:
-		#print(tempList, savepath.format(*previousParamVals))
-				
-		#print(tempList)
-		with open(savepath.format(*previousParamVals), "w") as txt_file:
-			for line in tempList:
-				txt_file.write("	".join([str(i) for i in line]) + "\n") # works with any number of elements in a line
-					
-		#np.savetxt(fname=savepath.format(*previousParamVals), X=tempList, delimiter="	")	
-		saved_sets+=1
-		print("{} were saved from the hdf5 file, while {} were NOT.".format(h5, noth5))
+def getParamsToDisregard(paramList, savepath):
+	"""
+	The parameters that have to be taken into account here are only the ones that are mentioned in the savepath; and the sweep one.
+	Others can be discounted. For example the relation parameters; gamma2 = gamma1; sweep is along gamma1, no need to have gamma2 anywhere.
+	This function gets the indeces of these parameters.
+	"""
+	indexList = []
+	i=-1
+	for param in paramList:
+		i+=1
+		name = param.name
+		a = re.search("_"+name+"{}", savepath)
+		if a == None:
+			indexList.append(i)
 
-		return saved_sets, saved
+	return indexList
+
+def sliceAndSave(EList, paramList, whichParam, savepath):
+	"""
+	Reshapes the EList so that the values can be saved accoring to the sweep parameter and saves them.
+	"""
+
+	disregardIndeces = getParamsToDisregard(paramList, savepath)	#disregards parameters that are not mentioned in the savepath, and the sweep parameter.
+
+	tempList = []
+	saved_sets = 0
+	for i in range(len(EList)-1):
+
+		currentParamValues = takeOutParams(EList[i], disregardIndeces)
+		nextParamValues = takeOutParams(EList[i+1], disregardIndeces)
+
+		#currentParamValues = takeOutSweepParam(EList[i], whichParam)
+		#nextParamValues = takeOutSweepParam(EList[i+1], whichParam)
+
+		if whichParam==None:
+			tempList.append(EList[i][-1])
+		else: 
+			tempList.append([EList[i][whichParam]]+list(EList[i][-1]))
+
+		#If the next parameter values are different to current, save and reset the tempList  
+		if newParamBatch(nextParamValues[:-1], currentParamValues[:-1]):# and i>0:
+			saveToFile(tempList, savepath, currentParamValues)
+			saved_sets +=1
+			tempList=[]
+
+	#append and save the last case
+	if whichParam==None:
+		tempList.append(EList[-1][-1])
+	else: 	
+		tempList.append([EList[-1][whichParam]]+list(EList[-1][-1]))
+	
+	saveToFile(tempList, savepath, nextParamValues)
+	saved_sets += 1
+
+	return saved_sets
 
 ###################################################################################################
 #UTILITY FUNCTIONS
+
+def readFileToList(file):
+	ll=[]
+
+	try:
+		with open(file, "r") as f:
+			for line in f:
+				ll.append(line.strip())
+	except FileNotFoundError:
+		pass
+
+	return ll
+
+def valuesWithoutSweep(i, paramList, whichParam):
+	if whichParam == None:
+		return np.array([EList[i][j] for j in range(len(paramList))])
+
+	else:
+		return np.array([EList[i][j] for j in range(whichParam)] + [EList[i][j] for j in range(whichParam+1,len(paramList))])
+
+def newParamBatch(oldSet, newSet):
+	for i in range(len(oldSet)):
+		if oldSet[i] != newSet[i]:
+			return True
+	return False
+
+def takeOutParams(valueList, takeOutList):
+	"""
+	Takes out elements from the valueList at indexes given in takeOutList. Works also if takeOutList == [].
+	"""
+
+	for i in takeOutList:
+		newList = np.array([valueList[j] for j in range(i)] + [valueList[j] for j in range(i+1,len(valueList))])
+		valueList = newList
+	return valueList	
+
+def saveToFile(tempList, savepath, parameterValues):
+	with open(savepath.format(*parameterValues), "w") as txt_file:
+		for E in tempList:
+			txt_file.write("	".join([str(i) for i in E]) + "\n") # works with any number of elements in a line
+			
+
+###################################################################################################
+#UTILITY PARSING FUNCTIONS
 
 def read_impindex(file):
 	with open(file, 'r') as f:
@@ -371,11 +427,9 @@ def get_quantity_h5(file, state, quantity):
 	Given the .h5 file, the state quantum numbers and the name of the quantity, returns it.
 	"""
 	hf = h5py.File(file, "r")
-
+	
 	n, Sz, excited, path = state
-
 	#path = "/{}/{}/{}/{}/".format(n, Sz, excited, quantity)
-
 	E = np.array(hf.get(path+"/"+quantity))
 
 	#if E is a zero dimensional quantity, take it out of the list
@@ -423,10 +477,6 @@ def put_impindex_to_front(a, impindex):
 
 ###################################################################################################
 #hdf5 parsing functions
-def print_times(file, states):
-	
-	raise Exception("Times are not saved in the h5 files!")	
-	return None
 
 def get_energies(file, states):
 	"""
@@ -548,9 +598,18 @@ def get_correlation(file, state, which_corr):
 
 		corrs = zz + 0.5*(mp + pm)
 
-	else:	
+	elif which_corr == "hopping_correlation":
+		corrsUp = get_quantity_h5(file, state, "hopping/up")
+		corrsDn = get_quantity_h5(file, state, "hopping/dn")
+		
+		#THERE IS NO IMP TERM HERE!
+		
+		#corrs = np.abs(corrsUp) + np.abs(corrsDn)
+		corrs = corrsUp + corrsDn
+
+	else:
 		corrs = get_quantity_h5(file, state, which_corr)
-		corrs = put_impindex_to_front(corrs, impindex)
+				#NO IMPURITY TERM HERE ALSO!
 	
 	return corrs
 
@@ -558,7 +617,9 @@ def get_charge_correlations(file, states):
 	"""
 	Gets charge correlations. 
 	"""
-	corrs = get_correlation(file, states, "charge_correlation")
+	corrs=[]
+	for state in states:
+		corrs.append(get_correlation(file, state, "charge_correlation"))
 	return corrs
 
 def get_pair_correlations(file, states):
@@ -580,10 +641,53 @@ def get_spin_correlations(file, states):
 
 def get_hopping_correlations(file, states):
 	"""
-	Gets hooping correlations. 
+	Gets hopping correlations. 
 	"""
-	corrs = get_correlation(file, states, "hopping_correlation")
+	corrs=[]
+	for state in states:
+		corrs.append(get_correlation(file, state, "hopping_correlation"))
+	
 	return corrs
+
+def get_imp_amplitudes_zero(file, states):
+	"""
+	Gets impurity amplitudes.
+	"""
+	amps = []
+	for s in states:
+		amp = get_quantity_h5(file, s, "imp_amplitudes/0")
+		amps.append(amp)
+	return amps
+
+def get_imp_amplitudes_up(file, states):
+	"""
+	Gets impurity amplitudes.
+	"""
+	amps = []
+	for s in states:
+		amp = get_quantity_h5(file, s, "imp_amplitudes/up")
+		amps.append(amp)
+	return amps
+
+def get_imp_amplitudes_down(file, states):
+	"""
+	Gets impurity amplitudes.
+	"""
+	amps = []
+	for s in states:
+		amp = get_quantity_h5(file, s, "imp_amplitudes/down")
+		amps.append(amp)
+	return amps
+
+def get_imp_amplitudes_two(file, states):
+	"""
+	Gets impurity amplitudes.
+	"""
+	amps = []
+	for s in states:
+		amp = get_quantity_h5(file, s, "imp_amplitudes/2")
+		amps.append(amp)
+	return amps
 
 ###################################################################################################
 ###################################################################################################
@@ -591,16 +695,6 @@ def get_hopping_correlations(file, states):
 ###################################################################################################
 ###################################################################################################
 #FUNCTIONS THAT GET THE PATH TO output AS THE INPUT AND RETURN A LIST OF OBSERVABLES
-
-def print_times_text(file):
-	with open(file, "r") as resF:
-		for line in resF:
-			lastline = line		
-	
-	a = re.search("Wall time: (\d+)", lastline)
-	if a:
-		time = int(a.group(1))
-	return [time]
 
 def get_energies_text(file, returnStates=False):
 	"""
@@ -636,7 +730,7 @@ def get_energies_text(file, returnStates=False):
 			#THIS IS IF THE OUTPUT FILE IS OLD AND DOES NOT HAVE Szs
 			else:
 				c = re.search("n = ([0-9]+).*E.*= (-?\d*.?\d*)", line) #this is specifically for energy in the standard DMRG output
-				if b:
+				if c:
 					n = int(c.group(1))
 					E = float(c.group(2))
 					
@@ -683,7 +777,7 @@ def get_ns_text(file):
 
 	else:
 		ns = sorted(ns)	#sort by ns
-					
+
 	return ns
 
 def get_Szs_text(file):
@@ -878,20 +972,35 @@ def get_imp_occupancies_text(file):
 	"""
 	Gets impurity occupation from the text output file.
 	"""
+
 	impindex = get_impindex(file)
 
-	states = get_energies_text(file, returnStates=True)
+	#states = get_energies_text(file, returnStates=True)
+
 
 	impoccs = []
 	with open(file, "r") as resF:
 		for line in resF:
 			a = re.search("RESULTS FOR THE SECTOR WITH (\d+) PARTICLES, Sz (\d+.?\d?), state (\d+):", line)
+			olda = re.search("RESULTS FOR THE SECTOR WITH (\d+) PARTICLES, Sz (\d+.?\d?):", line)
+			oldera = re.search("RESULTS FOR THE SECTOR WITH (\d+) PARTICLES:", line)
 			b = re.search("site occupancies = ", line)
-			
+				
+
 			if a:
 				n = int(a.group(1))
 				Sz = float(a.group(2))
 				ii = int(a.group(3))
+
+			if olda:
+				n = int(olda.group(1))
+				Sz = float(olda.group(2))
+				ii = 0
+
+			if oldera:
+				n = int(oldera.group(1))
+				Sz = 0
+				ii = 0
 
 			if b:
 				occupancies = re.findall("\d*\.\d+|\d+", line)
@@ -899,12 +1008,11 @@ def get_imp_occupancies_text(file):
 				occupancies = [float(i) for i in occupancies]
 				occ = occupancies[:impindex-1] + occupancies[impindex:]
 				impocc = occupancies[impindex-1]
-			
+
 				impoccs.append([n, Sz, ii, impocc])
 
+	sortedimpoccs = [nimp for _, _, _, nimp in sorted(impoccs, key = lambda x : (x[0], x[1], x[2]))]					
 
-	sortedimpoccs = [n for _, _, _, n in sorted(impoccs, key = lambda x : (x[0], x[1], x[2]))]			
-		
 	return sortedimpoccs
 	
 ###################################################################################################
