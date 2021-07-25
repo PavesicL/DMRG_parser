@@ -163,7 +163,8 @@ def save_variables_simple(which_var, which_func, params=[]):
 			print("The output file is not output or output.txt; or does not exist! Job: "+job)
 			continue
 
-		Es, A, B = getDataHDF5(job, result_file_h5, result_file, which_func)
+		Es, A, B = getDataHDF5(job, result_file_h5, result_file, which_func, params)
+
 		h5+=A
 		noth5+=B
 
@@ -212,7 +213,7 @@ def updateParamValues(paramList, regex):
 
 	return None
 
-def getDataHDF5(job, result_file_h5, result_file, which_func):
+def getDataHDF5(job, result_file_h5, result_file, which_func, params=[]):
 	"""
 	Calls the desired parsing function and saves the recovered data.
 	"""
@@ -229,7 +230,12 @@ def getDataHDF5(job, result_file_h5, result_file, which_func):
 
 		states = get_all_states(result_file_h5)							
 		this_module = sys.modules[__name__]
-		Es = getattr(this_module, which_func)(result_file_h5, states)
+
+		if params==[]:
+			Es = getattr(this_module, which_func)(result_file_h5, states)
+		else:
+			Es = getattr(this_module, which_func)(result_file_h5, states, params)
+
 		h5+=1
 
 	except:
@@ -287,9 +293,6 @@ def sliceAndSave(EList, paramList, whichParam, savepath):
 		currentParamValues = takeOutParams(EList[i], disregardIndeces)
 		nextParamValues = takeOutParams(EList[i+1], disregardIndeces)
 
-		#currentParamValues = takeOutSweepParam(EList[i], whichParam)
-		#nextParamValues = takeOutSweepParam(EList[i+1], whichParam)
-
 		if whichParam==None:
 			tempList.append(EList[i][-1])
 		else: 
@@ -344,10 +347,10 @@ def takeOutParams(valueList, takeOutList):
 	"""
 	Takes out elements from the valueList at indexes given in takeOutList. Works also if takeOutList == [].
 	"""
-
-	for i in takeOutList:
+	for i in sorted(takeOutList, reverse=True):
 		newList = np.array([valueList[j] for j in range(i)] + [valueList[j] for j in range(i+1,len(valueList))])
 		valueList = newList
+	
 	return valueList	
 
 def saveToFile(tempList, savepath, parameterValues):
@@ -355,9 +358,39 @@ def saveToFile(tempList, savepath, parameterValues):
 		for E in tempList:
 			txt_file.write("	".join([str(i) for i in E]) + "\n") # works with any number of elements in a line
 			
+def fix_string_Sz(Sz):
+
+	Sz = float(Sz)
+	if Sz == 0:
+		Sz = "0"
+	if Sz == 0.5:
+		Sz = "0.5"
+	if Sz == -0.5:
+		Sz = "-0.5"
+	if Sz == 1:
+		Sz = "1"
+	if Sz == -1:
+		Sz = "-1"
+
+	return Sz		
 
 ###################################################################################################
 #UTILITY PARSING FUNCTIONS
+
+def read_p_param(param, file):
+	"""
+	Reads a parameter from the parameter class - these are the ones printed out at the start of output.txt.
+	"""
+
+	with open(file, "r") as f:
+		for line in f:
+			a = re.search("params." + param + " = (.*)", line)
+			if a:
+				res = a.group(1)
+				return res
+
+	print(f"Param {param} not found in file {file}!")
+	return None
 
 def read_impindex(file):
 	with open(file, 'r') as f:
@@ -522,6 +555,19 @@ def get_imp_occupancies(file, states):
 		occs.append(imp_occupancy)
 
 	return occs	
+
+def get_total_spin(file, states):
+	"""
+	Get total spin from all states.
+	"""
+	
+	ll=[]
+	for s in states:
+		SS = get_quantity_h5(file, s, "S2")
+
+		ll.append(SS)
+
+	return ll
 
 def get_all_occupancies(file, states):
 	"""
@@ -688,6 +734,74 @@ def get_imp_amplitudes_two(file, states):
 		amp = get_quantity_h5(file, s, "imp_amplitudes/2")
 		amps.append(amp)
 	return amps
+
+def get_charge_susceptibility(file, states, which):
+	"""
+	Gets charge susceptibilities. 
+	Reads how many excited states are computed in a given result and saves all the combinations.
+	For all unique combinations of (n, Sz) gets all charge susceptibility combinations, without double counting.
+	"""
+
+	i, j = which
+
+	nSz = np.unique([[s[0], s[1]] for s in states], axis=0)	#these are all pairs of n, Sz; taking out the excited states.
+
+	css = []
+	for n, Sz in nSz:
+			
+		Sz = fix_string_Sz(Sz)	
+
+		cs = get_single_charge_susceptibility(file, n, Sz, i, j)
+		css.append(cs)
+
+	return css	
+
+def get_single_charge_susceptibility(file, n, Sz, i, j):
+	"""
+	Reads a singlet charge susc number. If it is not found returns zero.
+	"""
+
+	path = f"/charge_susceptibilty/{n}/{Sz}/{i}/{j}/"
+
+	try:
+		hf = h5py.File(file, "r")
+		cs = np.array(hf.get(path))[()]
+		
+		if math.isnan(cs):
+			return 0
+		else:
+			return cs
+	except:
+		return 0
+
+def get_which_overlaps(file, states, which):
+	overlaps = []
+	for s in states:
+		overlaps.append(get_quantity_h5(file, s, which))
+	return overlaps
+
+def get_ZBA_overlaps_BCSL(file, states):
+	"""
+	This is from the Lanczos code!
+	"""
+	o = get_which_overlaps(file, states, "doublet_overlaps_BCSL")
+	return o
+
+def get_ZBA_overlaps_BCSR(file, states):
+	"""
+	This is from the Lanczos code!
+	"""
+	o = get_which_overlaps(file, states, "doublet_overlaps_BCSR")
+	return o
+
+def get_ZBA_overlaps_OS(file, states):
+	"""
+	This is from the Lanczos code!
+	"""
+	o = get_which_overlaps(file, states, "doublet_overlaps_OS")
+	return o
+
+
 
 ###################################################################################################
 ###################################################################################################
