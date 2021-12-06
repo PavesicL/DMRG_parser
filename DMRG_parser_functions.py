@@ -34,6 +34,10 @@ def readNameFileParsing(file, observable, noParam=False):
 	obsCheck = False
 	param = None
 
+	#This is the main folder variable. All jobs will be saved into folder+path.
+	#It is an empty string here, but if found, it is prepended to the given path
+	folder = ""
+
 	with open(file, "r") as f:
 		for line in f:
 			line = line.strip()
@@ -49,6 +53,8 @@ def readNameFileParsing(file, observable, noParam=False):
 
 			c = re.search("path\s*=\s*(.*)", line)
 			d = re.search("\s*sweep\s*(.*)", line)
+
+			e = re.search("FOLDER\s*=\s*(.*)", line)	
 			
 			if a:
 				obsCheck=True
@@ -59,14 +65,16 @@ def readNameFileParsing(file, observable, noParam=False):
 				path = c.group(1)
 			if d and obsCheck:
 				param = d.group(1)
-
+			if e:
+				folder = e.group(1)
+	
 	try: 		
-		return param, path.strip()			
+		return param, folder.strip() + path.strip()			
 	
 	except UnboundLocalError:
+		print("readNameFileParsing(): THERE IS A PROBLEM WITH PARSING OF THE NAME FILE")
 		return 0, 0
-
-
+	
 def getParamsNameFile(file):
 	"""
 	Reads the nameFile, and returns a generic jobname and a dictionary of parameters, 
@@ -174,7 +182,11 @@ def save_variables_simple(which_var, which_func, params=[]):
 	
 	EList = sortByParamValues(EList, whichParam, paramList)
 
-	saved_sets = sliceAndSave(EList, paramList, whichParam, savepath)
+	#all function params are passed as additionalSaveParameters. If this is an empty string nothing happens. 
+	#Otherwise, the function parameters are also given in the savepath format() line. Useful for eg. cdag_overlaps or similiar where a certain overlap should be
+	#parsed and not all states. 
+	
+	saved_sets = sliceAndSave(EList, paramList, whichParam, savepath, params)	
 	print("{} were saved from the hdf5 file, while {} were NOT.".format(h5, noth5))
 
 	return saved_sets, saved
@@ -268,30 +280,30 @@ def getParamsToDisregard(paramList, savepath):
 	Others can be discounted. For example the relation parameters; gamma2 = gamma1; sweep is along gamma1, no need to have gamma2 anywhere.
 	This function gets the indeces of these parameters.
 	"""
+
 	indexList = []
 	i=-1
 	for param in paramList:
 		i+=1
 		name = param.name
-		a = re.search("_"+name+"{}", savepath)
+		a = re.search("_"+name+"{\d*}", savepath) # \d* allows also for number formatting of the savepath! Eg.: energies_U{1}_gamma{3}
 		if a == None:
 			indexList.append(i)
 
 	return indexList
 
-def sliceAndSave(EList, paramList, whichParam, savepath):
+def sliceAndSave(EList, paramList, whichParam, savepath, additionalSaveParameters):
 	"""
 	Reshapes the EList so that the values can be saved accoring to the sweep parameter and saves them.
 	"""
-
 	disregardIndeces = getParamsToDisregard(paramList, savepath)	#disregards parameters that are not mentioned in the savepath, and the sweep parameter.
 
 	tempList = []
 	saved_sets = 0
 	for i in range(len(EList)-1):
 
-		currentParamValues = takeOutParams(EList[i], disregardIndeces)
-		nextParamValues = takeOutParams(EList[i+1], disregardIndeces)
+		currentParamValues = takeOutParams(EList[i], disregardIndeces)[:-1]
+		nextParamValues = takeOutParams(EList[i+1], disregardIndeces)[:-1]
 
 		if whichParam==None:
 			tempList.append(EList[i][-1])
@@ -299,8 +311,8 @@ def sliceAndSave(EList, paramList, whichParam, savepath):
 			tempList.append([EList[i][whichParam]]+list(EList[i][-1]))
 
 		#If the next parameter values are different to current, save and reset the tempList  
-		if newParamBatch(nextParamValues[:-1], currentParamValues[:-1]):# and i>0:
-			saveToFile(tempList, savepath, currentParamValues)
+		if newParamBatch(nextParamValues, currentParamValues):# and i>0:
+			saveToFile(tempList, savepath, currentParamValues, additionalSaveParameters)
 			saved_sets +=1
 			tempList=[]
 
@@ -310,7 +322,7 @@ def sliceAndSave(EList, paramList, whichParam, savepath):
 	else: 	
 		tempList.append([EList[-1][whichParam]]+list(EList[-1][-1]))
 	
-	saveToFile(tempList, savepath, nextParamValues)
+	saveToFile(tempList, savepath, nextParamValues, additionalSaveParameters)
 	saved_sets += 1
 
 	return saved_sets
@@ -353,10 +365,10 @@ def takeOutParams(valueList, takeOutList):
 	
 	return valueList	
 
-def saveToFile(tempList, savepath, parameterValues):
-	with open(savepath.format(*parameterValues), "w") as txt_file:
+def saveToFile(tempList, savepath, parameterValues, additionalSaveParameters):
+	with open(savepath.format(*parameterValues, *additionalSaveParameters), "w") as txt_file:
 		for E in tempList:
-			txt_file.write("	".join([str(i) for i in E]) + "\n") # works with any number of elements in a line
+			txt_file.write("	".join([str(i) for i in E]) + "\n") # not numpy, so it works with any number of elements in a line
 			
 def fix_string_Sz(Sz):
 
@@ -424,8 +436,6 @@ def get_all_quantities_h5(file, quantity):
 	Used for energy, 
 	"""
 
-
-
 	#READ ALL PATH IN THE FILE USING h5dump
 	os.system("h5dump -n "+file+" > h5content.temp")
 
@@ -460,7 +470,7 @@ def get_quantity_h5(file, state, quantity):
 	Given the .h5 file, the state quantum numbers and the name of the quantity, returns it.
 	"""
 	hf = h5py.File(file, "r")
-	
+
 	n, Sz, excited, path = state
 	#path = "/{}/{}/{}/{}/".format(n, Sz, excited, quantity)
 	E = np.array(hf.get(path+"/"+quantity))
@@ -480,8 +490,8 @@ def get_all_states(file):
 	states=[]
 	with open("h5content.temp", "r") as contentFile:
 		for line in contentFile:
-			a = re.search("(/(\d+)/(-?\d+.?\d*)/(\d)/)", line)
-			if a:
+			a = re.search("(/(\d+)/(-?\d+.?\d*)/(\d)/)E$", line) 	#The E at the end limits this to find only lines where energy is saved. This restricts the search and also 
+			if a:													#solves the bug where this would find additional states from the overlap save functions. 
 				fullPath = a.group(1)
 				n = int(a.group(2))	
 				Sz = float(a.group(3))
@@ -520,6 +530,36 @@ def get_energies(file, states):
 		Es.append(get_quantity_h5(file, s, "E"))
 
 	return Es	
+
+def get_entropies(file, states):
+	"""
+	Get entropies from the .h5 output file.
+	"""
+	Es = []
+
+	for s in states:
+		Es.append(get_quantity_h5(file, s, "entanglement_entropy_imp"))
+	return Es	
+
+def get_entropies_before_after(file, states, which):
+	"""
+	Get entropies from the .h5 output file.
+	"""
+	Es = []
+
+	for s in states:
+		Es.append(get_quantity_h5(file, s, f"entanglement_entropy_imp/{which}"))
+	return Es	
+
+def get_channels_energy(file, states, which):
+	"""
+	Get entropies from the .h5 output file.
+	"""
+	Es = []
+
+	for s in states:
+		Es.append(get_quantity_h5(file, s, f"channel_energy_gain/{which}"))
+	return Es
 
 def get_ns(file, states):
 	"""
@@ -580,6 +620,131 @@ def get_all_occupancies(file, states):
 		occs.append(get_quantity_h5(file, state, "site_occupancies"))
 
 	return occs	
+
+def get_left_occupancies(file, states):
+	"""
+	Get occupancies for the left channel.
+	"""
+	impindex = get_impindex(file)
+	
+	occs=[]
+	for state in states:		
+		allOcc = get_quantity_h5(file, state, "site_occupancies")
+
+		leftOcc = sum_left_channel(impindex, allOcc)
+		occs.append(leftOcc)
+
+	return occs	
+
+def get_right_occupancies(file, states):
+	"""
+	Get occupancies for the right channel.
+	"""
+	impindex = get_impindex(file)
+	
+	occs=[]
+	for state in states:		
+		allOcc = get_quantity_h5(file, state, "site_occupancies")
+
+		rightOcc = sum_right_channel(impindex, allOcc)
+		occs.append(rightOcc)
+
+	return occs	
+
+def get_left_spin_correlations(file, states):
+	"""
+	Get occupancies for the left channel.
+	"""
+	impindex = get_impindex(file)
+	
+	corr=[]
+	for state in states:		
+		allCorr = get_correlation(file, state, "spin_correlation")
+
+		leftCorr = sum_left_channel(impindex, allCorr)
+		corr.append(leftCorr)
+
+	return corr
+
+def get_right_spin_correlations(file, states):
+	"""
+	Get occupancies for the left channel.
+	"""
+	impindex = get_impindex(file)
+	
+	corr=[]
+	for state in states:		
+		allCorr = get_correlation(file, state, "spin_correlation")
+
+		rightCorr = sum_right_channel(impindex, allCorr)
+		corr.append(rightCorr)
+
+	return corr
+
+def get_left_spin_spin_sum(file, states):
+	"""
+	Sums all entries in the left channel spin-spin correlation matrix.
+	"""
+	impindex = get_impindex(file)
+	sums = []
+	for state in states:
+		matrix = get_quantity_h5(file, state, "spin_correlation_matrix")
+		N = len(matrix)
+
+		withoutImp = matrix[1:, 1:]
+		leftChannelMat = withoutImp[:N//2, :N//2]
+		tot = np.sum(leftChannelMat)
+		
+		sums.append(tot)
+	return sums
+
+def get_right_spin_spin_sum(file, states):
+	"""
+	Sums all entries in the left channel spin-spin correlation matrix.
+	"""
+	impindex = get_impindex(file)
+	sums = []
+	for state in states:
+		matrix = get_quantity_h5(file, state, "spin_correlation_matrix")
+		N = len(matrix)
+
+		withoutImp = matrix[1:, 1:]
+		rightChannelMat = withoutImp[N//2:, N//2:]
+		tot = np.sum(rightChannelMat)
+		
+		sums.append(tot)
+	return sums
+
+def get_left_right_spin_spin_sum(file, states):
+	"""
+	Sums all off diagonal entries in the spin-spin correlation matrix.
+	"""
+	impindex = get_impindex(file)
+	sums = []
+	for state in states:
+		matrix = get_quantity_h5(file, state, "spin_correlation_matrix")
+		N = len(matrix)
+
+		withoutImp = matrix[1:, 1:]
+		leftRightChannelMat = withoutImp[N//2 : , :N//2]
+		tot = np.sum(leftRightChannelMat)
+		
+		sums.append(tot)
+	return sums
+
+
+def get_spin_spin_total_sum(file, states):
+	"""
+	Sums all off diagonal entries in the spin-spin correlation matrix.
+	"""
+	impindex = get_impindex(file)
+	sums = []
+	for state in states:
+		matrix = get_quantity_h5(file, state, "spin_correlation_matrix")
+		N = len(matrix)
+		tot = np.sum(matrix)		
+		sums.append(tot)
+	return sums
 
 def get_spectral_weights(file, states):
 	"""
@@ -655,7 +820,7 @@ def get_correlation(file, state, which_corr):
 
 	else:
 		corrs = get_quantity_h5(file, state, which_corr)
-				#NO IMPURITY TERM HERE ALSO!
+		#NO IMPURITY TERM HERE ALSO!
 	
 	return corrs
 
@@ -672,8 +837,22 @@ def get_pair_correlations(file, states):
 	"""
 	Gets pair correlations. 
 	"""
-	corrs = get_correlation(file, states, "pair_correlation")
+	corrs = []
+	for state in states:
+		corrs.append(get_correlation(file, state, "pair_correlation"))
+
 	return corrs
+
+def get_sc_amplitudes(file, states, which):
+	"""
+	Gets superconducting pair correlations. 
+	which is u/v/pdt.
+	"""
+	amps = []
+	for state in states:
+		amps.append(get_quantity_h5(file, state, "amplitudes/"+which))
+
+	return amps
 
 def get_spin_correlations(file, states):
 	"""
@@ -693,6 +872,20 @@ def get_hopping_correlations(file, states):
 	for state in states:
 		corrs.append(get_correlation(file, state, "hopping_correlation"))
 	
+	return corrs
+
+def get_imp_spin_correlations(file, states):
+	"""
+	Gets the spin correlations of the impurity.
+	"""
+	corrs = []
+	for s in states:
+		zz = get_quantity_h5(file, s, "spin_correlation_imp/zz")
+		pm = get_quantity_h5(file, s, "spin_correlation_imp/pm")
+		mp = get_quantity_h5(file, s, "spin_correlation_imp/mp")
+
+		corr = zz + 0.5 * (pm + mp)
+		corrs.append(corr)
 	return corrs
 
 def get_imp_amplitudes_zero(file, states):
@@ -774,6 +967,70 @@ def get_single_charge_susceptibility(file, n, Sz, i, j):
 	except:
 		return 0
 
+def get_dipole_moments(file, states, which):
+
+
+	i, j = which
+
+	nSz = np.unique([[s[0], s[1]] for s in states], axis=0)	#these are all pairs of n, Sz; taking out the excited states.
+
+	moments = []
+	for n, Sz in nSz:
+			
+		Sz = fix_string_Sz(Sz)	
+
+		moment = get_single_dipole_moment(file, n, Sz, i, j)
+		moments.append(moment)
+
+	return moments
+
+def get_single_dipole_moment(file, n, Sz, i, j):
+	
+	path = f"/transition_dipole_moment/{n}/{Sz}/{i}/{j}/"
+
+	try:
+		hf = h5py.File(file, "r")
+		cs = np.array(hf.get(path))[()]
+		
+		if math.isnan(cs):
+			return 0
+		else:
+			return cs
+	except:
+		return 0
+
+def get_quadrupole_moments(file, states, which):
+
+
+	i, j = which
+
+	nSz = np.unique([[s[0], s[1]] for s in states], axis=0)	#these are all pairs of n, Sz; taking out the excited states.
+
+	moments = []
+	for n, Sz in nSz:
+			
+		Sz = fix_string_Sz(Sz)	
+
+		moment = get_single_quadrupole_moment(file, n, Sz, i, j)
+		moments.append(moment)
+
+	return moments
+
+def get_single_quadrupole_moment(file, n, Sz, i, j):
+	
+	path = f"/transition_quadrupole_moment/{n}/{Sz}/{i}/{j}/"
+
+	try:
+		hf = h5py.File(file, "r")
+		cs = np.array(hf.get(path))[()]
+		
+		if math.isnan(cs):
+			return 0
+		else:
+			return cs
+	except:
+		return 0
+
 def get_which_overlaps(file, states, which):
 	overlaps = []
 	for s in states:
@@ -801,7 +1058,38 @@ def get_ZBA_overlaps_OS(file, states):
 	o = get_which_overlaps(file, states, "doublet_overlaps_OS")
 	return o
 
+def get_fullH_energies(file, states):
+	"""
+	Get energies from the .h5 output file.
+	"""
+	Es = []
+	for s in states:
+		Es.append(get_quantity_h5(file, s, "iteration/fullHE"))
 
+	return Es	
+
+def get_cdag_overlaps(file, states, which):
+	"""
+	Gets all cdag overlaps for two given states. 
+	The argument states is ignored as it is not needed - the states are already given in which.
+	"""
+	n1, Sz1, i1, n2, Sz2, i2 = which
+	Sz1 = fix_string_Sz(Sz1)
+	Sz2 = fix_string_Sz(Sz2)
+
+	path = f"/cdag_overlaps/{n1}/{n2}/{Sz1}/{Sz2}/{i1}/{i2}/"
+
+	try:
+		hf = h5py.File(file, "r")
+		aa = np.array(hf.get(path))	
+		values = np.array(hf.get(path))
+
+		if len(values) == 0:
+			return [0]
+		else:
+			return values
+	except:
+		return [0]
 
 ###################################################################################################
 ###################################################################################################
@@ -1128,7 +1416,50 @@ def get_imp_occupancies_text(file):
 	sortedimpoccs = [nimp for _, _, _, nimp in sorted(impoccs, key = lambda x : (x[0], x[1], x[2]))]					
 
 	return sortedimpoccs
-	
+
+def get_all_occupancies_text(file):
+	"""
+	Gets all occupancies from the text output file.
+	"""
+
+	impindex = get_impindex(file)
+
+	#states = get_energies_text(file, returnStates=True)
+
+	occs = []
+	with open(file, "r") as resF:
+		for line in resF:
+			a = re.search("RESULTS FOR THE SECTOR WITH (\d+) PARTICLES, Sz (\d+.?\d?), state (\d+):", line)
+			olda = re.search("RESULTS FOR THE SECTOR WITH (\d+) PARTICLES, Sz (\d+.?\d?):", line)
+			oldera = re.search("RESULTS FOR THE SECTOR WITH (\d+) PARTICLES:", line)
+			b = re.search("site occupancies = ", line)
+				
+
+			if a:
+				n = int(a.group(1))
+				Sz = float(a.group(2))
+				ii = int(a.group(3))
+
+			if olda:
+				n = int(olda.group(1))
+				Sz = float(olda.group(2))
+				ii = 0
+
+			if oldera:
+				n = int(oldera.group(1))
+				Sz = 0
+				ii = 0
+
+			if b:
+				occupancies = re.findall("\d*\.\d+|\d+", line)
+
+				occ = [float(i) for i in occupancies]
+				occs.append([n, Sz, ii, occ])
+
+	sortedoccs = [occs for _, _, _, occs in sorted(occs, key = lambda x : (x[0], x[1], x[2]))]					
+
+	return np.array(sortedoccs)
+
 ###################################################################################################
 #ADDITIONAL AUXILIARY FUNCTIONS
 
@@ -1192,4 +1523,26 @@ def get_nupndn_text(n, result_file):
 
 	return nup, ndn
 
+def sum_left_channel(impindex, values):
+	"""
+	Given a list of two channel values, sum them up for the left channel.
+	"""
+	N = len(values)
+	if impindex == 1:
+		leftValues = sum(values[1:((N-1)//2)+1])
+	else:
+		leftValues = sum(values[:impindex])	
+	return leftValues
 
+def sum_right_channel(impindex, values):
+	"""
+	Given a list of two channel values, sum them up for the right channel.
+	"""
+	
+	N = len(values)
+	if impindex == 1:
+		rightValues = sum(values[((N-1)//2)+1:])
+	else:
+		rightValues = sum(values[impindex+1:])	
+
+	return rightValues

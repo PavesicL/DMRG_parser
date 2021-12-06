@@ -9,7 +9,7 @@ import os
 import re
 
 def toH(seconds):
-	return seconds/3600
+	return round(seconds/3600, 1)
 
 def get_walltime(file):
 	with open(file, "r") as resF:
